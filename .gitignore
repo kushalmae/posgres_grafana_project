@@ -7,3 +7,4 @@ __pycache__/
 .claude/
 .venv/
 venv/
+data/.ingest_state.json

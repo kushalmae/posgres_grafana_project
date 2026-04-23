@@ -6,10 +6,21 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-CSV_PATH = REPO_ROOT / "data" / "telemetry.csv"
+DATA_DIR = REPO_ROOT / "data"
 INTERVAL_SECONDS = 5
 
-HEADER = ["timestamp", "satellite", "subsystem", "metric_name", "metric_value", "status"]
+HEADER = ["timestamp", "apid", "satellite", "subsystem", "metric_name", "metric_value", "status"]
+
+# APIDs are fleet-wide — same ID means same subsystem on any satellite
+APIDS = {
+    "power":   100,
+    "thermal": 101,
+    "obc":     102,
+    "comms":   103,
+    "adcs":    104,
+}
+
+SPACECRAFT = ["Sat-A", "Sat-B"]
 
 # Status thresholds: (warning_low, critical_low, warning_high, critical_high)
 THRESHOLDS = {
@@ -46,42 +57,30 @@ def get_status(signal_name, value):
 
 def simulate_signals(t, spacecraft):
     """
-    t = elapsed seconds since start
-    Each signal uses sine/cosine to mimic orbital physics + noise.
-    Sat-B runs slightly degraded to make dashboards interesting.
+    t = elapsed seconds since simulation start.
+    Sat-B runs with a phase offset and slight degradation.
     """
-    offset = 37.0 if spacecraft == "Sat-B" else 0.0   # phase offset between sats
-    orbit  = 2 * math.pi * (t + offset) / 5400        # ~90 min orbit period
+    offset = 37.0 if spacecraft == "Sat-B" else 0.0
+    orbit  = 2 * math.pi * (t + offset) / 5400
     noise  = lambda scale: random.gauss(0, scale)
 
-    # Power subsystem
-    # Battery charges in sunlight, drains in eclipse (sine wave)
-    battery_base = 29.5 + 2.0 * math.sin(orbit)
     battery_degradation = 0.8 if spacecraft == "Sat-B" else 0.0
-    battery_voltage = round(battery_base - battery_degradation + noise(0.05), 2)
+    battery_voltage = round(29.5 + 2.0 * math.sin(orbit) - battery_degradation + noise(0.05), 2)
+    solar_current   = round(max(0.0, 5.5 * math.sin(orbit) + noise(0.2)), 2)
 
-    # Solar current peaks when facing sun
-    solar_current = round(max(0.0, 5.5 * math.sin(orbit) + noise(0.2)), 2)
-
-    # Thermal subsystem
-    # Panel temp swings between eclipse cold and sunlit hot
     panel_temp = round(25 + 35 * math.sin(orbit) + noise(0.3), 1)
     cpu_temp   = round(45 + 8 * math.sin(orbit * 2) + noise(0.5), 1)
 
-    # On-board computer
     cpu_usage    = round(min(100, max(0, 35 + 20 * math.sin(orbit * 3 + 1) + noise(2))), 1)
     memory_usage = round(min(100, max(0, 52 + 5 * math.sin(orbit * 0.5) + noise(0.5))), 1)
 
-    # Comms subsystem
-    # Link quality drops near horizon passes
-    link_quality    = round(min(100, max(0, 92 + 6 * math.cos(orbit * 2) + noise(1))), 1)
-    downlink_rate   = round(max(0, 850 + 300 * math.cos(orbit * 2) + noise(10)), 0)
+    link_quality  = round(min(100, max(0, 92 + 6 * math.cos(orbit * 2) + noise(1))), 1)
+    downlink_rate = round(max(0, 850 + 300 * math.cos(orbit * 2) + noise(10)), 0)
 
-    # ADCS (attitude determination and control)
-    reaction_wheel  = round(3500 + 800 * math.sin(orbit * 4) + noise(5), 0)
-    magnetometer    = round(450 * math.sin(orbit + 1.2) + noise(5), 1)
-    attitude_error  = round(abs(0.3 + 0.5 * math.sin(orbit * 7) + noise(0.05)), 3)
-    gyro_rate       = round(abs(0.15 + 0.1 * math.sin(orbit * 5) + noise(0.01)), 4)
+    reaction_wheel = round(3500 + 800 * math.sin(orbit * 4) + noise(5), 0)
+    magnetometer   = round(450 * math.sin(orbit + 1.2) + noise(5), 1)
+    attitude_error = round(abs(0.3 + 0.5 * math.sin(orbit * 7) + noise(0.05)), 3)
+    gyro_rate      = round(abs(0.15 + 0.1 * math.sin(orbit * 5) + noise(0.01)), 4)
 
     return [
         ("power",   "battery_voltage",    battery_voltage),
@@ -99,50 +98,68 @@ def simulate_signals(t, spacecraft):
     ]
 
 
-def append_rows(rows):
-    with open(CSV_PATH, "a", newline="") as f:
-        writer = csv.writer(f)
-        writer.writerows(rows)
+def sat_label(spacecraft):
+    return spacecraft.lower().replace("-", "_")
 
 
-def ensure_header():
-    try:
-        with open(CSV_PATH, "r") as f:
-            first = f.readline().strip()
-            if first == ",".join(HEADER):
-                return
-    except FileNotFoundError:
-        pass
-    CSV_PATH.parent.mkdir(parents=True, exist_ok=True)
-    with open(CSV_PATH, "w", newline="") as f:
-        csv.writer(f).writerow(HEADER)
+def csv_path(spacecraft, apid):
+    """One CSV per satellite per APID — e.g. data/sat_a_apid_100.csv"""
+    return DATA_DIR / f"{sat_label(spacecraft)}_apid_{apid}.csv"
+
+
+def ensure_headers():
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    for spacecraft in SPACECRAFT:
+        for apid in APIDS.values():
+            path = csv_path(spacecraft, apid)
+            try:
+                with open(path, "r") as f:
+                    if f.readline().strip() == ",".join(HEADER):
+                        continue
+            except FileNotFoundError:
+                pass
+            with open(path, "w", newline="") as f:
+                csv.writer(f).writerow(HEADER)
+
+
+def append_rows(path, rows):
+    with open(path, "a", newline="") as f:
+        csv.writer(f).writerows(rows)
 
 
 if __name__ == "__main__":
-    ensure_header()
+    ensure_headers()
     start = time.time()
-    print("Simulating telemetry — appending to", CSV_PATH)
-    print("Signals: battery_voltage, solar_current, panel_temp, cpu_temp,")
-    print("         cpu_usage, memory_usage, link_quality, downlink_rate_kbps,")
-    print("         reaction_wheel_rpm, magnetometer_nt, attitude_error_deg, gyro_rate_dps")
+
+    files = [f"{sat_label(sc)}_apid_{a}.csv" for sc in SPACECRAFT for a in sorted(APIDS.values())]
+    print(f"Simulating telemetry — {len(files)} CSV files (one per satellite per APID)")
+    print(f"Fleet: {SPACECRAFT} | APIDs: {APIDS}")
     print(f"Interval: {INTERVAL_SECONDS}s | Ctrl+C to stop\n")
 
     tick = 0
     while True:
         t = time.time() - start
         now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
-        rows = []
 
-        for spacecraft in ["Sat-A", "Sat-B"]:
+        all_rows = []
+        for spacecraft in SPACECRAFT:
+            by_apid = {}
             for subsystem, metric_name, value in simulate_signals(t, spacecraft):
+                apid = APIDS[subsystem]
                 status = get_status(metric_name, value)
-                rows.append([now, spacecraft, subsystem, metric_name, value, status])
+                row = [now, apid, spacecraft, subsystem, metric_name, value, status]
+                by_apid.setdefault(apid, []).append(row)
+                all_rows.append(row)
+            for apid, rows in by_apid.items():
+                append_rows(csv_path(spacecraft, apid), rows)
 
-        append_rows(rows)
         tick += 1
-
-        non_nominal = [(r[1], r[3], r[4], r[5]) for r in rows if r[5] != "NOMINAL"]
-        status_str = " | ".join(f"{sc} {sig}={val} [{st}]" for sc, sig, val, st in non_nominal)
-        print(f"[tick {tick:04d}] {now}  +{len(rows)} rows" + (f"  ALERTS: {status_str}" if status_str else ""))
+        total_rows = len(all_rows)
+        alerts = [r for r in all_rows if r[6] != "NOMINAL"]
+        alert_str = " | ".join(f"{r[2]} APID{r[1]} {r[4]}={r[5]} [{r[6]}]" for r in alerts)
+        print(
+            f"[tick {tick:04d}] {now}  +{total_rows} rows"
+            + (f"  ALERTS: {alert_str}" if alert_str else "")
+        )
 
         time.sleep(INTERVAL_SECONDS)

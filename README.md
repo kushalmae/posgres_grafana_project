@@ -12,6 +12,7 @@ A local near-real-time telemetry dashboard pipeline. Python polls CSV files ever
 
 ```
 .
+├── start.ps1 / start.sh        # One-shot: Docker up + deps + ingestor
 ├── docker-compose.yml          # Postgres + Grafana
 ├── requirements.txt
 ├── db/
@@ -41,7 +42,28 @@ A local near-real-time telemetry dashboard pipeline. Python polls CSV files ever
 
 ## Quick Start
 
-### 1. Start containers
+### Option A — start everything (recommended)
+
+From the repo root, with Docker running:
+
+**Windows (PowerShell)**
+
+```powershell
+.\start.ps1
+```
+
+**macOS / Linux**
+
+```bash
+chmod +x start.sh
+./start.sh
+```
+
+This brings up Postgres and Grafana, waits until Postgres is ready, installs Python dependencies, then runs the CSV ingestor. Press **Ctrl+C** to stop the ingestor; containers keep running until you run `docker compose down`.
+
+### Option B — manual steps
+
+#### 1. Start containers
 
 ```bash
 docker compose up -d
@@ -59,13 +81,13 @@ Grafana is provisioned on startup with:
 
 If you already had Grafana data volumes from an older setup, you may see a second legacy data source in the UI; you can delete the unused one, or reset with `docker compose down -v` (this wipes Postgres data too).
 
-### 2. Install Python dependencies
+#### 2. Install Python dependencies
 
 ```bash
 pip install -r requirements.txt
 ```
 
-### 3. Run the ingestor
+#### 3. Run the ingestor
 
 ```bash
 python scripts/ingest_csv_to_postgres.py
