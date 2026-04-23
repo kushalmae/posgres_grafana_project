@@ -2,19 +2,23 @@
 
 ## End-to-End Pipeline
 
-```
-   PRODUCE                  INGEST                    STORE                  VISUALIZE
-  ──────────              ──────────                ──────────              ──────────
+```mermaid
+flowchart LR
+    SIM["simulate_telemetry.py\n(optional)"]
+    CSV["./data/*.csv\n(10 files)"]
+    STATE[".ingest_state.json"]
+    ING["ingest_csv_to_postgres.py\npoll every 5 s"]
+    HIST[("telemetry_history\nappend-only log")]
+    LATEST[("telemetry_latest\ncurrent snapshot")]
+    GF["Grafana\nDashboards"]
 
-simulate_       append    ./data/         poll      ingest_csv   INSERT    telemetry    SELECT    Grafana
-telemetry.py  ─────────►  sat_a_          every  ─► _to_postgres ───────►  _history    ───────►  Dashboards
-                          apid_100.csv    5s        .py           UPSERT   telemetry
-                          ...                                    ───────►  _latest
-                          sat_b_
-                          apid_104.csv
-                                │
-                         .ingest_state.json
-                         (byte offsets)
+    SIM   -->|"append rows"| CSV
+    CSV   -->|"new bytes"| ING
+    STATE <-->|"byte offsets"| ING
+    ING   -->|"INSERT\nON CONFLICT DO NOTHING"| HIST
+    ING   -->|"UPSERT\nON CONFLICT DO UPDATE"| LATEST
+    HIST  -->|"time-series\nqueries"| GF
+    LATEST-->|"current value\nqueries"| GF
 ```
 
 ---
@@ -33,6 +37,31 @@ timestamp,apid,satellite,subsystem,metric_name,metric_value,status
 ```
 
 Files are append-only during normal operation. The ingestor handles both append-only and full-rewrite patterns (via byte-offset reset on file shrinkage detection).
+
+---
+
+## Ingestion Sequence (per poll cycle)
+
+```mermaid
+sequenceDiagram
+    participant Sim  as Simulator
+    participant CSV  as CSV File
+    participant Ing  as Ingestor
+    participant State as .ingest_state.json
+    participant PG   as PostgreSQL
+
+    Sim  ->> CSV  : append row(s)
+
+    Note over Ing: every 5 seconds
+    Ing  ->> State: read saved byte offset
+    Ing  ->> CSV  : seek to offset, read new bytes
+    Ing  ->> Ing  : parse + normalize columns
+    Ing  ->> Ing  : compute SHA-256 row_hash per row
+    Ing  ->> PG   : INSERT telemetry_history (ON CONFLICT DO NOTHING)
+    Ing  ->> PG   : UPSERT telemetry_latest
+    Ing  ->> State: write new byte offset
+    Note over Ing: sleep 5 s, repeat
+```
 
 ---
 

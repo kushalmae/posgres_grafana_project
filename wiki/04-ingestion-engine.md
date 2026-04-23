@@ -12,20 +12,35 @@ It has two modes:
 
 ## The Main Loop
 
-```
-start
-  │
-  ├─ load .ingest_state.json (byte offsets per file)
-  │
-  └─ loop forever:
-       │
-       ├─ ingest_all(state)
-       │    └─ for each *.csv in ./data/:
-       │         └─ ingest_file(path, state)
-       │
-       ├─ every 720 cycles (~1hr): purge_old_rows()
-       │
-       └─ sleep(5 seconds)
+```mermaid
+flowchart TD
+    A([Start]) --> B[Load .ingest_state.json]
+    B --> C[For each *.csv in ./data/]
+
+    C --> D[Check current file size]
+    D --> E{size < saved\noffset?}
+    E -->|yes - file truncated| F[Reset offset to 0]
+    E -->|no| G[Seek to saved offset]
+    F --> G
+
+    G --> H[Read new bytes]
+    H --> I[Parse CSV rows]
+    I --> J{Required\ncolumns\npresent?}
+    J -->|no| K[Skip row, log warning]
+    J -->|yes| L[Normalize column names]
+    L --> M[Compute SHA-256 row_hash]
+    M --> N[INSERT telemetry_history\nON CONFLICT DO NOTHING]
+    N --> O[UPSERT telemetry_latest]
+    O --> P[Save new byte offset]
+
+    P --> C
+    K --> C
+
+    C --> Q{Every 720\ncycles ≈ 1hr?}
+    Q -->|yes| R[DELETE rows older\nthan retention window]
+    Q -->|no| S[Sleep 5 s]
+    R --> S
+    S --> C
 ```
 
 ---

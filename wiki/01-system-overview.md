@@ -49,22 +49,27 @@ These are not bugs. The system is scoped for **local development and demo use**,
 
 ## Components at a Glance
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                      Your Machine                               │
-│                                                                 │
-│  CSV Files           Python Process         Docker Network      │
-│  ./data/             scripts/               ──────────────────  │
-│  ├─ sat_a_apid_100   ingest_csv_to_         │  postgres:5432  │  │
-│  ├─ sat_a_apid_101     postgres.py    ───►  │  local_csv_db   │  │
-│  ├─ ...              (polls every 5s)       ──────────────────  │
-│  └─ sat_b_apid_104                                    │         │
-│                                                       ▼         │
-│  Optional generator                         ──────────────────  │
-│  simulate_telemetry  ───► writes CSVs       │  grafana:3000   │  │
-│                                             │  localhost:3000 │  │
-│                                             ──────────────────  │
-└─────────────────────────────────────────────────────────────────┘
+```mermaid
+graph TB
+    subgraph HOST["Your Machine"]
+        subgraph FILES["./data/"]
+            CSV["sat_a_apid_100.csv\nsat_a_apid_101.csv\n...\nsat_b_apid_104.csv\n(10 files)"]
+        end
+        SIM["simulate_telemetry.py\n(optional)"]
+        ING["ingest_csv_to_postgres.py\n(polls every 5 s)"]
+        STATE[".ingest_state.json\n(byte offsets)"]
+    end
+
+    subgraph DOCKER["Docker Network"]
+        PG[("PostgreSQL 16\npostgres:5432\nlocal_csv_db")]
+        GF["Grafana 11.4.3\ngrafana:3000\nlocalhost:3000"]
+    end
+
+    SIM  -->|"append rows"| CSV
+    CSV  -->|"new bytes only"| ING
+    ING <-->|"read / write"| STATE
+    ING  -->|"INSERT / UPSERT"| PG
+    PG   -->|"SQL queries"| GF
 ```
 
 ---

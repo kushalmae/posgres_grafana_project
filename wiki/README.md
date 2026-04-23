@@ -17,6 +17,7 @@ Read in order if you're new. Jump to a section if you know what you need.
 | [05 · Grafana Integration](05-grafana-integration.md) | Data source, provisioning, dashboard queries |
 | [06 · Configuration & Deployment](06-configuration-and-deployment.md) | Docker Compose, environment variables, startup sequence |
 | [07 · Operations Runbook](07-operations-runbook.md) | How to run, reset, debug, and extend the system |
+| [08 · ERD](08-erd.md) | Entity relationship diagram, index map, signal topology, data volume model |
 
 ---
 

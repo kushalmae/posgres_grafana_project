@@ -23,28 +23,30 @@ Note: The Grafana data source config (`datasources.yml`) hardcodes `grafana_user
 
 ## Docker Compose Architecture
 
-```
-docker-compose.yml defines two services:
+```mermaid
+graph TB
+    subgraph HOST["Host Machine"]
+        ENV[".env\n(DB_USER, DB_PASSWORD, ...)"]
+        SQL["./db/init_db.sql"]
+        PROV["./grafana/provisioning/\n(datasources + dashboards yml)"]
+        DASH["./grafana/dashboards/\n(*.json)"]
+        VOL1[("postgres_data\nnamed volume")]
+        VOL2[("grafana_data\nnamed volume")]
+    end
 
-  ┌─────────────────────────────────┐   ┌─────────────────────────────────┐
-  │ postgres                        │   │ grafana                         │
-  │ image: postgres:16              │   │ image: grafana/grafana:11.4.3   │
-  │ container: local-postgres       │   │ container: local-grafana        │
-  │ port: 5432:5432                 │   │ port: 3000:3000                 │
-  │                                 │   │                                 │
-  │ volumes:                        │   │ volumes:                        │
-  │  postgres_data (named)          │   │  grafana_data (named)           │
-  │  ./db/init_db.sql               │   │  ./grafana/provisioning/        │
-  │    → /docker-entrypoint-        │   │    → /etc/grafana/provisioning/ │
-  │      initdb.d/init_db.sql       │   │  ./grafana/dashboards/          │
-  │                                 │   │    → /etc/grafana/dashboards/   │
-  │ healthcheck:                    │   │                                 │
-  │  pg_isready every 10s           │   │ depends_on:                     │
-  │  timeout 5s, retries 5          │   │  postgres: { condition:         │
-  │                                 │   │    service_healthy }            │
-  └─────────────────────────────────┘   └─────────────────────────────────┘
-          │ Both on bridge network: telemetry_net                    │
-          └──────────────────────────────────────────────────────────┘
+    subgraph DOCKER["Docker Network: telemetry_net"]
+        PG["postgres\nimage: postgres:16\ncontainer: local-postgres\nport: 5432:5432\nhealthcheck: pg_isready"]
+        GF["grafana\nimage: grafana/grafana:11.4.3\ncontainer: local-grafana\nport: 3000:3000\ndepends_on: postgres healthy"]
+    end
+
+    SQL  -->|"mount → /docker-entrypoint-initdb.d/"| PG
+    ENV  -->|"env_file"| PG
+    ENV  -->|"env_file"| GF
+    VOL1 <-->|"persist data"| PG
+    VOL2 <-->|"persist data"| GF
+    PROV -->|"mount → /etc/grafana/provisioning/"| GF
+    DASH -->|"mount → /etc/grafana/dashboards/"| GF
+    PG   -->|"SQL wire protocol\npostgres:5432"| GF
 ```
 
 **Named volumes** (`postgres_data`, `grafana_data`) persist data between `docker compose stop/start`. They are destroyed by `docker compose down -v`.
@@ -90,24 +92,29 @@ Running the ingestor and simulator in separate terminals lets you kill/restart t
 
 ## Startup Order Dependencies
 
-```
-Postgres starts
-    │
-    └─ init_db.sql runs (creates tables + indexes)
-           │
-           └─ Grafana starts (depends_on: postgres healthy)
-                  │
-                  └─ Loads datasources.yml (creates telemetry_pg source)
-                         │
-                         └─ Loads dashboards/*.json (provisions 3 dashboards)
-                                │
-                                └─ [ready] http://localhost:3000
+```mermaid
+sequenceDiagram
+    participant DC  as docker compose up
+    participant PG  as PostgreSQL
+    participant GF  as Grafana
+    participant Ing as Ingestor (Python)
 
-Python ingestor starts (independent of Grafana, requires Postgres)
-    │
-    └─ Connects to Postgres via DB_HOST:DB_PORT
-           │
-           └─ Begins polling ./data/*.csv every 5 seconds
+    DC  ->> PG  : start container
+    PG  ->> PG  : run init_db.sql
+    Note over PG: tables + indexes created
+    PG  -->> DC : healthcheck passes (pg_isready)
+
+    DC  ->> GF  : start container (depends_on: postgres healthy)
+    GF  ->> GF  : load provisioning/datasources/datasources.yml
+    Note over GF: telemetry_pg data source created
+    GF  ->> GF  : load provisioning/dashboards/dashboards.yml
+    GF  ->> GF  : scan grafana/dashboards/*.json
+    Note over GF: 3 dashboards provisioned
+    GF  -->> DC : ready at localhost:3000
+
+    Note over Ing: started separately (./start.sh or manually)
+    Ing ->> PG  : connect via localhost:5432
+    Note over Ing: poll loop begins (every 5 s)
 ```
 
 The ingestor connects to `localhost:5432` by default (i.e., the Docker-mapped port on your host machine). Grafana connects to `postgres:5432` (Docker internal hostname). Both reach the same Postgres container.
