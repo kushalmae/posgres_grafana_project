@@ -10,6 +10,44 @@ It has two modes:
 
 ---
 
+## CSV Input Format
+
+Place CSV files in the `./data/` folder. The ingestor picks up all `*.csv` files each poll cycle.
+
+**Required columns:**
+
+| Column | Type | Example |
+|--------|------|---------|
+| `timestamp` | datetime | `2026-04-18 10:00:00` |
+| `satellite` | text | `Sat-A` |
+| `subsystem` | text | `power` |
+| `metric_name` | text | `battery_voltage` |
+| `metric_value` | float | `28.4` |
+| `status` | text | `NOMINAL` |
+
+**Optional columns:**
+
+| Column | Type | Example |
+|--------|------|---------|
+| `signal_unit` | text | `V`, `°C`, `%` |
+| `apid` | integer | `100` |
+
+**Example:**
+```csv
+timestamp,satellite,subsystem,metric_name,metric_value,status
+2026-04-18 10:00:00,Sat-A,power,battery_voltage,28.4,NOMINAL
+2026-04-18 10:00:05,Sat-A,power,battery_voltage,28.3,NOMINAL
+2026-04-18 10:00:10,Sat-B,power,battery_voltage,26.1,CRITICAL
+```
+
+**Notes:**
+- Files must be UTF-8 encoded. Non-UTF-8 bytes will cause that file to be skipped with an error log.
+- If any required column is missing from a file, the entire file is skipped with a warning. Check ingestor logs if data isn't appearing.
+- `metric_value` must be numeric. Rows where it cannot be parsed (e.g. `"N/A"`) are silently dropped.
+- Rows are deduplicated by SHA-256 hash — re-ingesting a file is safe.
+
+---
+
 ## The Main Loop
 
 ```mermaid

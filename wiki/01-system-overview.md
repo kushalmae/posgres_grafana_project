@@ -50,26 +50,19 @@ These are not bugs. The system is scoped for **local development and demo use**,
 ## Components at a Glance
 
 ```mermaid
-graph TB
-    subgraph HOST["Your Machine"]
-        subgraph FILES["./data/"]
-            CSV["sat_a_apid_100.csv\nsat_a_apid_101.csv\n...\nsat_b_apid_104.csv\n(10 files)"]
-        end
-        SIM["simulate_telemetry.py\n(optional)"]
-        ING["ingest_csv_to_postgres.py\n(polls every 5 s)"]
-        STATE[".ingest_state.json\n(byte offsets)"]
-    end
+flowchart TB
+    SIM["simulate_telemetry.py (optional)"]
+    CSV["./data/*.csv (10 files)"]
+    ING["ingest_csv_to_postgres.py (polls every 5 s)"]
+    STATE[".ingest_state.json (byte offsets)"]
+    PG[(PostgreSQL 16 / local_csv_db / postgres:5432)]
+    GF["Grafana 11.4.3 (localhost:3000)"]
 
-    subgraph DOCKER["Docker Network"]
-        PG[("PostgreSQL 16\npostgres:5432\nlocal_csv_db")]
-        GF["Grafana 11.4.3\ngrafana:3000\nlocalhost:3000"]
-    end
-
-    SIM  -->|"append rows"| CSV
-    CSV  -->|"new bytes only"| ING
-    ING <-->|"read / write"| STATE
-    ING  -->|"INSERT / UPSERT"| PG
-    PG   -->|"SQL queries"| GF
+    SIM -->|"append rows"| CSV
+    CSV -->|"new bytes only"| ING
+    STATE <-->|"read/write offsets"| ING
+    ING -->|"INSERT + UPSERT"| PG
+    PG -->|"SQL queries"| GF
 ```
 
 ---

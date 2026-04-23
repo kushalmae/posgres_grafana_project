@@ -151,4 +151,76 @@ Change the password via Grafana UI → Profile → Change Password if running in
 
 ---
 
+## Query Reference
+
+Copy-paste ready queries for common panel types. All reference the `Telemetry PostgreSQL` data source (UID `telemetry_pg`).
+
+**Time-series — all signals**
+```sql
+SELECT
+  observed_at AS time,
+  signal_value AS value,
+  spacecraft || ' › ' || signal_name AS metric
+FROM telemetry_history
+WHERE $__timeFilter(observed_at)
+ORDER BY observed_at;
+```
+
+**Time-series — battery voltage by spacecraft**
+```sql
+SELECT
+  observed_at AS time,
+  signal_value AS value,
+  spacecraft AS metric
+FROM telemetry_history
+WHERE $__timeFilter(observed_at)
+  AND signal_name = 'battery_voltage'
+ORDER BY observed_at;
+```
+
+**Table — current state of all spacecraft**
+```sql
+SELECT
+  spacecraft,
+  subsystem,
+  signal_name,
+  signal_value,
+  status,
+  observed_at
+FROM telemetry_latest
+ORDER BY spacecraft, subsystem;
+```
+
+**Table — active warnings and criticals**
+```sql
+SELECT
+  spacecraft,
+  signal_name,
+  signal_value,
+  status,
+  observed_at
+FROM telemetry_latest
+WHERE status IN ('WARNING', 'CRITICAL')
+ORDER BY status DESC, spacecraft;
+```
+
+**Stat panel — single signal latest value**
+```sql
+SELECT signal_value
+FROM telemetry_latest
+WHERE spacecraft = 'Sat-A'
+  AND signal_name = 'battery_voltage';
+```
+
+**Bar gauge — battery voltage across all spacecraft**
+```sql
+SELECT spacecraft AS metric, signal_value AS value
+FROM telemetry_latest
+WHERE signal_name = 'battery_voltage';
+```
+
+Set dashboard **refresh interval to 5s or 10s** for near-real-time updates.
+
+---
+
 Next: [06 · Configuration & Deployment →](06-configuration-and-deployment.md)

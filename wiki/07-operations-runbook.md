@@ -32,6 +32,24 @@ git commit -m "Update dashboard: <describe change>"
 
 ---
 
+## Stopping the System
+
+**Stop the ingestor only** — press `Ctrl+C` in the terminal running `ingest_csv_to_postgres.py`. Containers keep running.
+
+**Stop containers (keep data):**
+```bash
+docker compose down
+```
+
+**Stop containers and delete all stored data (volumes):**
+```bash
+docker compose down -v
+```
+
+`-v` destroys the named Docker volumes (`postgres_data`, `grafana_data`, `pgadmin_data`). All database rows, Grafana state, and pgAdmin config are gone. Use only for a full reset.
+
+---
+
 ## Resetting the Database
 
 **Soft reset (keep containers, wipe data):**
@@ -174,6 +192,25 @@ docker exec -it local-postgres psql -U grafana_user -d local_csv_db -c "
 
 ---
 
+## Manual Data Purge
+
+**Delete rows older than N days:**
+```sql
+DELETE FROM telemetry_history WHERE observed_at < NOW() - INTERVAL '7 days';
+VACUUM ANALYZE telemetry_history;
+```
+
+`VACUUM ANALYZE` reclaims disk space and updates query planner statistics after a large delete. Run it after any `DELETE` that removes more than 10% of the table.
+
+**Purge stale CSV files** — remove CSV files that are no longer part of the active pipeline:
+```bash
+rm data/old_satellite.csv
+```
+
+The ingestor will no longer pick them up on the next poll cycle. Their state entry in `.ingest_state.json` becomes stale but harmless.
+
+---
+
 ## Manual Vacuum
 
 After bulk deletes (especially after `TRUNCATE` or large purges), reclaim space:
@@ -187,6 +224,25 @@ This updates planner statistics and reclaims dead tuple space. Run after any `DE
 ---
 
 ## Useful SQL Snippets
+
+**Row counts:**
+```sql
+SELECT COUNT(*) FROM telemetry_history;
+SELECT COUNT(*) FROM telemetry_latest;
+```
+
+**Data time range:**
+```sql
+SELECT MIN(observed_at), MAX(observed_at) FROM telemetry_history;
+```
+
+**Rows per spacecraft and APID:**
+```sql
+SELECT spacecraft, apid, COUNT(*) AS rows
+FROM telemetry_history
+GROUP BY spacecraft, apid
+ORDER BY spacecraft, apid;
+```
 
 **Latest reading per spacecraft:**
 ```sql
