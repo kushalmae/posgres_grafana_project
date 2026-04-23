@@ -12,16 +12,18 @@ A local near-real-time telemetry dashboard pipeline. Python polls CSV files ever
 
 ```
 .
-├── docker-compose.yml              # Postgres + Grafana containers
-├── init_db.sql                     # Schema — auto-loaded on first Postgres start
-├── ingest_csv_to_postgres.py       # Python polling ingestor
-├── simulate_telemetry.py           # Optional: append synthetic rows to data/telemetry.csv
-├── export_grafana_dashboards.py   # Optional: pull dashboards from a running Grafana to JSON
+├── docker-compose.yml          # Postgres + Grafana
 ├── requirements.txt
+├── db/
+│   └── init_db.sql             # Schema — mounted on first Postgres start
+├── scripts/
+│   ├── ingest_csv_to_postgres.py
+│   ├── simulate_telemetry.py   # Optional synthetic CSV append
+│   └── export_grafana_dashboards.py
 ├── data/
-│   └── telemetry.csv               # Small sample CSV (replace or grow via simulator)
+│   └── telemetry.csv           # Sample / live CSV input
 ├── grafana/
-│   ├── dashboards/                 # Dashboard JSON (flat format for file provisioning)
+│   ├── dashboards/
 │   └── provisioning/
 │       ├── dashboards/dashboards.yml
 │       └── datasources/datasources.yml
@@ -49,7 +51,7 @@ This starts:
 - **PostgreSQL 16** on `localhost:5432`
 - **Grafana** on `http://localhost:3000`
 
-The schema (`telemetry_history` and `telemetry_latest`) is created automatically from `init_db.sql` on first run.
+The schema (`telemetry_history` and `telemetry_latest`) is created automatically from `db/init_db.sql` on first run.
 
 Grafana is provisioned on startup with:
 - a **PostgreSQL** data source (UID `telemetry_pg`, default) pointing at the `postgres` service
@@ -66,7 +68,7 @@ pip install -r requirements.txt
 ### 3. Run the ingestor
 
 ```bash
-python ingest_csv_to_postgres.py
+python scripts/ingest_csv_to_postgres.py
 ```
 
 The ingestor watches `./data/` every 5 seconds. New rows appended to any `.csv` file will be inserted into Postgres automatically. Duplicate rows are silently ignored via SHA-256 row hash.
@@ -76,7 +78,7 @@ The ingestor watches `./data/` every 5 seconds. New rows appended to any `.csv` 
 In a second terminal:
 
 ```bash
-python simulate_telemetry.py
+python scripts/simulate_telemetry.py
 ```
 
 This appends new rows to `./data/telemetry.csv` on the same cadence as the ingestor so dashboards update continuously.
@@ -137,7 +139,7 @@ Open **http://localhost:3000** (default login `admin` / `admin`). The **Telemetr
 
 If you disabled provisioning or need a manual data source, use host `postgres:5432` (the Docker service name, not `localhost`), database `local_csv_db`, user `grafana_user`, password `grafana_password`, TLS disabled.
 
-To export dashboards from a running instance into this repo’s format, run `python export_grafana_dashboards.py --flat` so JSON matches file provisioning (inner dashboard object only).
+To export dashboards from a running instance into this repo’s format, run `python scripts/export_grafana_dashboards.py --flat` so JSON matches file provisioning (inner dashboard object only).
 
 ---
 

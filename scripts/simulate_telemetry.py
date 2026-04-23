@@ -3,8 +3,10 @@ import time
 import math
 import random
 from datetime import datetime, timezone
+from pathlib import Path
 
-CSV_PATH = "./data/telemetry.csv"
+REPO_ROOT = Path(__file__).resolve().parent.parent
+CSV_PATH = REPO_ROOT / "data" / "telemetry.csv"
 INTERVAL_SECONDS = 5
 
 HEADER = ["timestamp", "satellite", "subsystem", "metric_name", "metric_value", "status"]
@@ -111,6 +113,7 @@ def ensure_header():
                 return
     except FileNotFoundError:
         pass
+    CSV_PATH.parent.mkdir(parents=True, exist_ok=True)
     with open(CSV_PATH, "w", newline="") as f:
         csv.writer(f).writerow(HEADER)
 

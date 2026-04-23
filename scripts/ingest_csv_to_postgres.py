@@ -1,10 +1,13 @@
 import os
 import time
 import hashlib
+from pathlib import Path
+
 import pandas as pd
 from sqlalchemy import create_engine, text
 
-CSV_FOLDER = "./data"
+REPO_ROOT = Path(__file__).resolve().parent.parent
+CSV_FOLDER = str(REPO_ROOT / "data")
 POLL_SECONDS = 5
 
 DB_USER = "grafana_user"

@@ -5,11 +5,15 @@ import urllib.request
 import urllib.error
 from base64 import b64encode
 from datetime import datetime
+from pathlib import Path
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
+DEFAULT_OUTPUT_DIR = str(REPO_ROOT / "grafana" / "dashboards")
 
 GRAFANA_URL = "http://localhost:3000"
 GRAFANA_USER = "admin"
 GRAFANA_PASSWORD = "admin"
-OUTPUT_DIR = "./grafana/dashboards"
+OUTPUT_DIR = DEFAULT_OUTPUT_DIR
 
 
 def auth_header():
@@ -44,8 +48,8 @@ def safe_filename(title):
     return "".join(c if c.isalnum() or c in " -_" else "_" for c in title).strip().replace(" ", "_").lower()
 
 
-def run(watch=False, interval=300, flat=False):
-    os.makedirs(OUTPUT_DIR, exist_ok=True)
+def run(watch=False, interval=300, flat=False, output_dir=DEFAULT_OUTPUT_DIR):
+    os.makedirs(output_dir, exist_ok=True)
 
     def export_all():
         try:
@@ -63,7 +67,7 @@ def run(watch=False, interval=300, flat=False):
             try:
                 payload = export_dashboard(db["uid"])
                 filename = f"{safe_filename(db['title'])}.json"
-                filepath = os.path.join(OUTPUT_DIR, filename)
+                filepath = os.path.join(output_dir, filename)
                 out_obj = payload["dashboard"] if flat else payload
                 with open(filepath, "w") as f:
                     json.dump(out_obj, f, indent=2)
@@ -72,7 +76,7 @@ def run(watch=False, interval=300, flat=False):
                 print(f"  Failed to export '{db['title']}': {e}")
 
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        print(f"[{timestamp}] Exported {len(exported)}/{len(dashboards)} dashboards → {OUTPUT_DIR}/")
+        print(f"[{timestamp}] Exported {len(exported)}/{len(dashboards)} dashboards → {output_dir}/")
         for title, path in exported:
             print(f"  {title:40s}  →  {path}")
 
@@ -91,7 +95,7 @@ if __name__ == "__main__":
     parser.add_argument("--url",      default=GRAFANA_URL,      help="Grafana base URL")
     parser.add_argument("--user",     default=GRAFANA_USER,     help="Grafana username")
     parser.add_argument("--password", default=GRAFANA_PASSWORD, help="Grafana password")
-    parser.add_argument("--out",      default=OUTPUT_DIR,       help="Output directory")
+    parser.add_argument("--out",      default=DEFAULT_OUTPUT_DIR, help="Output directory")
     parser.add_argument("--watch",    action="store_true",       help="Re-export on interval")
     parser.add_argument("--interval", type=int, default=300,    help="Watch interval in seconds (default 300)")
     parser.add_argument(
@@ -104,6 +108,5 @@ if __name__ == "__main__":
     GRAFANA_URL      = args.url
     GRAFANA_USER     = args.user
     GRAFANA_PASSWORD = args.password
-    OUTPUT_DIR       = args.out
 
-    run(watch=args.watch, interval=args.interval, flat=args.flat)
+    run(watch=args.watch, interval=args.interval, flat=args.flat, output_dir=args.out)
