@@ -16,6 +16,38 @@ Purged after 30 days       Never purged
 
 This is the same pattern used by time-series databases like InfluxDB: one table for the firehose, one table for the ticker.
 
+```mermaid
+erDiagram
+    telemetry_history {
+        BIGSERIAL id PK
+        TIMESTAMPTZ observed_at
+        TEXT spacecraft
+        TEXT subsystem
+        INTEGER apid
+        TEXT signal_name
+        DOUBLE signal_value
+        TEXT signal_unit
+        TEXT status
+        TEXT source_file
+        TEXT row_hash UK
+        TIMESTAMPTZ inserted_at
+    }
+
+    telemetry_latest {
+        TEXT spacecraft PK
+        TEXT subsystem PK
+        TEXT signal_name PK
+        INTEGER apid
+        DOUBLE signal_value
+        TEXT signal_unit
+        TEXT status
+        TIMESTAMPTZ observed_at
+        TIMESTAMPTZ updated_at
+    }
+
+    telemetry_history ||--o{ telemetry_latest : "latest row selected by (spacecraft, subsystem, signal_name)"
+```
+
 ---
 
 ## telemetry_history
@@ -165,10 +197,35 @@ The `init_db.sql` uses `IF NOT EXISTS` everywhere. Restarting Docker (without `-
 
 To add a new column or index:
 1. Add it to `init_db.sql` with `IF NOT EXISTS` guard
-2. Run it manually against the live DB (or restart the container)
-3. Document it in `docs/database-operations.md`
+2. Run it manually against the live DB (no container restart needed)
+3. Document it in the Migration Changelog below
 
-Do NOT drop or rename existing columns in `init_db.sql` without a migration plan—Grafana dashboard queries may reference them by name.
+**Running a migration against a live database:**
+```bash
+docker exec -it local-postgres psql -U grafana_user -d local_csv_db
+```
+
+Then run your migration SQL:
+```sql
+ALTER TABLE telemetry_history ADD COLUMN IF NOT EXISTS apid INTEGER;
+CREATE INDEX IF NOT EXISTS idx_telemetry_history_apid
+    ON telemetry_history (apid, observed_at DESC);
+```
+
+All statements use `IF NOT EXISTS` so they are safe to re-run.
+
+Do NOT drop or rename existing columns in `init_db.sql` without a migration plan — Grafana dashboard queries reference column names directly. Breaking changes require a full reset (see [Operations Runbook](07-operations-runbook.md)).
+
+---
+
+## Migration Changelog
+
+All migrations belong in `db/init_db.sql` using `IF NOT EXISTS` guards so they are idempotent and serve as a version history.
+
+| Date | Change |
+|------|--------|
+| 2026-04-22 | Added `apid INTEGER` column to `telemetry_history` and `telemetry_latest` |
+| 2026-04-22 | Added indexes: `observed_at`, `spacecraft/signal_name`, `apid`, partial alerts index |
 
 ---
 

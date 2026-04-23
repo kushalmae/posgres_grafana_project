@@ -10,37 +10,74 @@ It has two modes:
 
 ---
 
+## CSV Input Format
+
+Place CSV files in the `./data/` folder. The ingestor picks up all `*.csv` files each poll cycle.
+
+**Required columns:**
+
+| Column | Type | Example |
+|--------|------|---------|
+| `timestamp` | datetime | `2026-04-18 10:00:00` |
+| `satellite` | text | `Sat-A` |
+| `subsystem` | text | `power` |
+| `metric_name` | text | `battery_voltage` |
+| `metric_value` | float | `28.4` |
+| `status` | text | `NOMINAL` |
+
+**Optional columns:**
+
+| Column | Type | Example |
+|--------|------|---------|
+| `signal_unit` | text | `V`, `°C`, `%` |
+| `apid` | integer | `100` |
+
+**Example:**
+```csv
+timestamp,satellite,subsystem,metric_name,metric_value,status
+2026-04-18 10:00:00,Sat-A,power,battery_voltage,28.4,NOMINAL
+2026-04-18 10:00:05,Sat-A,power,battery_voltage,28.3,NOMINAL
+2026-04-18 10:00:10,Sat-B,power,battery_voltage,26.1,CRITICAL
+```
+
+**Notes:**
+- Files must be UTF-8 encoded. Non-UTF-8 bytes will cause that file to be skipped with an error log.
+- If any required column is missing from a file, the entire file is skipped with a warning. Check ingestor logs if data isn't appearing.
+- `metric_value` must be numeric. Rows where it cannot be parsed (e.g. `"N/A"`) are silently dropped.
+- Rows are deduplicated by SHA-256 hash — re-ingesting a file is safe.
+
+---
+
 ## The Main Loop
 
 ```mermaid
 flowchart TD
-    A([Start]) --> B[Load .ingest_state.json]
-    B --> C[For each *.csv in ./data/]
+    A([Start]) --> B[Load state file]
+    B --> LOOP[Next csv file]
 
-    C --> D[Check current file size]
-    D --> E{size < saved\noffset?}
-    E -->|yes - file truncated| F[Reset offset to 0]
+    LOOP -->|more files| D[Check file size]
+    D --> E{File truncated?}
+    E -->|yes| F[Reset offset to 0]
     E -->|no| G[Seek to saved offset]
     F --> G
 
     G --> H[Read new bytes]
     H --> I[Parse CSV rows]
-    I --> J{Required\ncolumns\npresent?}
-    J -->|no| K[Skip row, log warning]
-    J -->|yes| L[Normalize column names]
+    I --> J{Valid columns?}
+    J -->|no| K[Skip row]
+    J -->|yes| L[Normalize columns]
     L --> M[Compute SHA-256 row_hash]
-    M --> N[INSERT telemetry_history\nON CONFLICT DO NOTHING]
+    M --> N[INSERT telemetry_history]
     N --> O[UPSERT telemetry_latest]
-    O --> P[Save new byte offset]
+    O --> P[Save byte offset]
+    P --> LOOP
+    K --> LOOP
 
-    P --> C
-    K --> C
-
-    C --> Q{Every 720\ncycles ≈ 1hr?}
-    Q -->|yes| R[DELETE rows older\nthan retention window]
+    LOOP -->|all files done| Q{Purge cycle?}
+    Q -->|yes| R[DELETE old rows]
     Q -->|no| S[Sleep 5 s]
     R --> S
-    S --> C
+    S --> LOOP
 ```
 
 ---

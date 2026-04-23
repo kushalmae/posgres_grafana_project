@@ -31,7 +31,7 @@ erDiagram
         TIMESTAMPTZ    updated_at   "last upsert time (default NOW())"
     }
 
-    telemetry_history }o--|| telemetry_latest : "many history rows\nper latest snapshot\n(spacecraft + subsystem + signal_name)"
+    telemetry_history }o--|| telemetry_latest : "many rows per signal snapshot"
 ```
 
 ---
@@ -111,13 +111,11 @@ erDiagram
 
 ## Data Volume Model
 
-```mermaid
-graph LR
-    subgraph "Steady State (30-day retention)"
-        A["30 signals\n× 12 readings/min\n× 60 min/hr\n× 24 hr/day\n× 30 days\n= ~15.5M rows"]
-        B["~200 bytes/row\n(with index overhead)\n= ~3 GB"]
-    end
-    A --> B
+At steady state with 30-day retention and 5-second polling:
+
+```
+30 signals x 12 readings/min x 60 min/hr x 24 hr/day x 30 days = ~15.5M rows
+~200 bytes/row (including index overhead) = ~3 GB total
 ```
 
 `telemetry_latest` stays fixed at ~30 rows regardless of retention window.
