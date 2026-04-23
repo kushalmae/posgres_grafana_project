@@ -14,33 +14,32 @@ It has two modes:
 
 ```mermaid
 flowchart TD
-    A([Start]) --> B[Load .ingest_state.json]
-    B --> C[For each *.csv in ./data/]
+    A([Start]) --> B[Load state file]
+    B --> LOOP[Next csv file]
 
-    C --> D[Check current file size]
-    D --> E{size < saved\noffset?}
-    E -->|yes - file truncated| F[Reset offset to 0]
+    LOOP -->|more files| D[Check file size]
+    D --> E{File truncated?}
+    E -->|yes| F[Reset offset to 0]
     E -->|no| G[Seek to saved offset]
     F --> G
 
     G --> H[Read new bytes]
     H --> I[Parse CSV rows]
-    I --> J{Required\ncolumns\npresent?}
-    J -->|no| K[Skip row, log warning]
-    J -->|yes| L[Normalize column names]
+    I --> J{Valid columns?}
+    J -->|no| K[Skip row]
+    J -->|yes| L[Normalize columns]
     L --> M[Compute SHA-256 row_hash]
-    M --> N[INSERT telemetry_history\nON CONFLICT DO NOTHING]
+    M --> N[INSERT telemetry_history]
     N --> O[UPSERT telemetry_latest]
-    O --> P[Save new byte offset]
+    O --> P[Save byte offset]
+    P --> LOOP
+    K --> LOOP
 
-    P --> C
-    K --> C
-
-    C --> Q{Every 720\ncycles ≈ 1hr?}
-    Q -->|yes| R[DELETE rows older\nthan retention window]
+    LOOP -->|all files done| Q{Purge cycle?}
+    Q -->|yes| R[DELETE old rows]
     Q -->|no| S[Sleep 5 s]
     R --> S
-    S --> C
+    S --> LOOP
 ```
 
 ---

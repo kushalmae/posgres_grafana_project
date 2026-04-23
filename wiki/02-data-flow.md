@@ -47,7 +47,7 @@ sequenceDiagram
     participant Sim  as Simulator
     participant CSV  as CSV File
     participant Ing  as Ingestor
-    participant State as .ingest_state.json
+    participant State as State File
     participant PG   as PostgreSQL
 
     Sim  ->> CSV  : append row(s)
